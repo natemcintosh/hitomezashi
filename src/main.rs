@@ -1,7 +1,81 @@
-use nannou::prelude::*;
+use nannou::{prelude::*, rand::Rng};
+use nannou_egui::{egui, Egui};
+use rand_pcg::Pcg64;
+use rand_seeder::Seeder;
+
+struct RectSettings {
+    spacing: f32,
+    horz_selectors: Vec<bool>,
+    vert_selectors: Vec<bool>,
+}
+
+struct Model {
+    settings: RectSettings,
+    egui: Egui,
+}
 
 fn main() {
-    nannou::sketch(view).run();
+    nannou::app(model).update(update).run();
+}
+
+fn model(app: &App) -> Model {
+    let window_id = app
+        .new_window()
+        .view(view)
+        .raw_event(raw_window_event)
+        .build()
+        .unwrap();
+
+    let window = app.window(window_id).unwrap();
+    let egui = Egui::from_window(&window);
+    Model {
+        egui,
+        settings: RectSettings {
+            spacing: 25.0,
+            horz_selectors: vec![true, false, false, false, true],
+            vert_selectors: vec![false, true],
+        },
+    }
+}
+
+fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
+    model.egui.handle_raw_event(event);
+}
+
+fn update(_app: &App, model: &mut Model, update: Update) {
+    // This destructures the model, giving mutable references to the settings and egui
+    // but without having to prefix them with `model` every time they are accessed.
+    let Model {
+        ref mut settings,
+        ref mut egui,
+    } = *model;
+
+    egui.set_elapsed_time(update.since_start);
+    let ctx = egui.begin_frame();
+    let mut horz_seed: u8 = 0;
+    let mut vert_seed: u8 = 0;
+    egui::Window::new("Workshop window").show(&ctx, |ui| {
+        let mut changed = false;
+        changed |= ui
+            .add(egui::Slider::new(&mut settings.spacing, 10.0..=100.0).text("Spacing"))
+            .changed();
+
+        changed |= ui
+            .add(egui::Slider::new(&mut horz_seed, 0..=255).text("Horizontal Seed"))
+            .changed();
+
+        changed |= ui
+            .add(egui::Slider::new(&mut vert_seed, 0..=255).text("Vertical Seed"))
+            .changed();
+
+        if changed {
+            let mut rng: Pcg64 = Seeder::from(horz_seed).make_rng();
+            rng.fill(&mut settings.horz_selectors[..]);
+
+            let mut rng: Pcg64 = Seeder::from(vert_seed).make_rng();
+            rng.fill(&mut settings.vert_selectors[..]);
+        }
+    });
 }
 
 #[allow(dead_code)]
@@ -39,7 +113,7 @@ fn draw_horizontal_lines(draw: &Draw, bounds: Rect, spacing: f32) {
 
 /// Draws a dashed line from `start` to `end`. The length of each dash is the same as the
 /// length of each gap.
-fn draw_equal_dashed_line(draw: &Draw, start: Point2, end: Point2, dash_length: f32) {
+fn draw_dashed_line(draw: &Draw, start: Point2, end: Point2, dash_length: f32) {
     // Create a vector poiting from `start` to `end`, of lengh `dash_length`
     let draw_direction = (end - start).normalize() * dash_length;
 
@@ -80,7 +154,7 @@ fn draw_hito_horizontal(draw: &Draw, bounds: Rect, dash_length: f32, on_off_sele
         selector_idx += 1;
 
         // Draw the line
-        draw_equal_dashed_line(
+        draw_dashed_line(
             draw,
             pt2(start_x, current_y_pos),
             pt2(bounds.right(), current_y_pos),
@@ -114,7 +188,7 @@ fn draw_hito_vertical(draw: &Draw, bounds: Rect, dash_length: f32, on_off_select
         selector_idx += 1;
 
         // Draw the line
-        draw_equal_dashed_line(
+        draw_dashed_line(
             draw,
             pt2(current_x_pos, start_y),
             pt2(current_x_pos, bounds.bottom()),
@@ -126,25 +200,26 @@ fn draw_hito_vertical(draw: &Draw, bounds: Rect, dash_length: f32, on_off_select
     }
 }
 
-fn view(app: &App, frame: Frame) {
+fn view(app: &App, model: &Model, frame: Frame) {
     // Prepare to draw.
     let draw = app.draw();
 
     // Clear the background to purple.
     draw.background().color(WHITE);
 
-    // Draw a dashed line every 10 units
+    // Draw the pattern as specified by the model settings
     draw_hito_horizontal(
         &draw,
         app.window_rect(),
-        25.0,
-        &[true, false, true, false, true],
+        model.settings.spacing,
+        &model.settings.horz_selectors,
     );
+
     draw_hito_vertical(
         &draw,
         app.window_rect(),
-        25.0,
-        &[false, true, false, true, false],
+        model.settings.spacing,
+        &model.settings.vert_selectors,
     );
 
     // Write to the window frame.
