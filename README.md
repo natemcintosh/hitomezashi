@@ -2,7 +2,7 @@
 
 ![Example of Output](assets/hitomezashi_1.jpg)
 
-I created this repo to play around with creating different [Hitmezashi patterns](https://www.youtube.com/watch?v=JbfhzlMk2eY) using the [nannou](https://github.com/nannou-org/nannou) library for creating visualizations.
+I created this repo to play around with creating different [Hitomezashi patterns](https://www.youtube.com/watch?v=JbfhzlMk2eY) using the [nannou](https://github.com/nannou-org/nannou) library for creating visualizations.
 
 Right now it can draw some simple patterns. To change the pattern, alter the slices of `bool`s in `view()` in `src/main.rs`.
 
