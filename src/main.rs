@@ -7,6 +7,8 @@ struct RectSettings {
     spacing: f32,
     horz_selectors: Vec<bool>,
     vert_selectors: Vec<bool>,
+    horz_seed: u8,
+    vert_seed: u8,
 }
 
 struct Model {
@@ -15,7 +17,7 @@ struct Model {
 }
 
 fn main() {
-    nannou::app(model).update(update).run();
+    nannou::app(model).loop_mode(LoopMode::Wait).update(update).run();
 }
 
 fn model(app: &App) -> Model {
@@ -32,8 +34,10 @@ fn model(app: &App) -> Model {
         egui,
         settings: RectSettings {
             spacing: 25.0,
-            horz_selectors: vec![true, false, false, false, true],
-            vert_selectors: vec![false, true],
+            horz_selectors: vec![false; 10],
+            vert_selectors: vec![false; 10],
+            horz_seed: 0,
+            vert_seed: 0,
         },
     }
 }
@@ -52,30 +56,55 @@ fn update(_app: &App, model: &mut Model, update: Update) {
 
     egui.set_elapsed_time(update.since_start);
     let ctx = egui.begin_frame();
-    let mut horz_seed: u8 = 0;
-    let mut vert_seed: u8 = 0;
-    egui::Window::new("Workshop window").show(&ctx, |ui| {
+    egui::Window::new("Settings").show(&ctx, |ui| {
         let mut changed = false;
         changed |= ui
             .add(egui::Slider::new(&mut settings.spacing, 10.0..=100.0).text("Spacing"))
             .changed();
 
         changed |= ui
-            .add(egui::Slider::new(&mut horz_seed, 0..=255).text("Horizontal Seed"))
+            .add(egui::Slider::new(&mut settings.horz_seed, 0..=255).text("Horizontal Seed"))
             .changed();
 
         changed |= ui
-            .add(egui::Slider::new(&mut vert_seed, 0..=255).text("Vertical Seed"))
+            .add(egui::Slider::new(&mut settings.vert_seed, 0..=255).text("Vertical Seed"))
             .changed();
 
         if changed {
-            let mut rng: Pcg64 = Seeder::from(horz_seed).make_rng();
+            let mut rng: Pcg64 = Seeder::from(settings.horz_seed).make_rng();
             rng.fill(&mut settings.horz_selectors[..]);
 
-            let mut rng: Pcg64 = Seeder::from(vert_seed).make_rng();
+            let mut rng: Pcg64 = Seeder::from(settings.vert_seed).make_rng();
             rng.fill(&mut settings.vert_selectors[..]);
         }
     });
+}
+
+fn view(app: &App, model: &Model, frame: Frame) {
+    // Prepare to draw.
+    let draw = app.draw();
+
+    // Clear the background to purple.
+    draw.background().color(WHITE);
+
+    // Draw the pattern as specified by the model settings
+    draw_hito_horizontal(
+        &draw,
+        app.window_rect(),
+        model.settings.spacing,
+        &model.settings.horz_selectors,
+    );
+
+    draw_hito_vertical(
+        &draw,
+        app.window_rect(),
+        model.settings.spacing,
+        &model.settings.vert_selectors,
+    );
+
+    // Write to the window frame.
+    draw.to_frame(app, &frame).unwrap();
+    model.egui.draw_to_frame(&frame).unwrap();
 }
 
 #[allow(dead_code)]
@@ -198,30 +227,4 @@ fn draw_hito_vertical(draw: &Draw, bounds: Rect, dash_length: f32, on_off_select
         // Update x position
         current_x_pos += dash_length;
     }
-}
-
-fn view(app: &App, model: &Model, frame: Frame) {
-    // Prepare to draw.
-    let draw = app.draw();
-
-    // Clear the background to purple.
-    draw.background().color(WHITE);
-
-    // Draw the pattern as specified by the model settings
-    draw_hito_horizontal(
-        &draw,
-        app.window_rect(),
-        model.settings.spacing,
-        &model.settings.horz_selectors,
-    );
-
-    draw_hito_vertical(
-        &draw,
-        app.window_rect(),
-        model.settings.spacing,
-        &model.settings.vert_selectors,
-    );
-
-    // Write to the window frame.
-    draw.to_frame(app, &frame).unwrap();
 }
