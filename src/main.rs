@@ -137,14 +137,14 @@ fn view(app: &App, frame: Frame) {
     draw_hito_horizontal(
         &draw,
         app.window_rect(),
-        10.0,
-        &[true, false, true, true, false],
+        25.0,
+        &[true, false, true, false, true],
     );
     draw_hito_vertical(
         &draw,
         app.window_rect(),
-        10.0,
-        &[false, true, false, false, true],
+        25.0,
+        &[false, true, false, true, false],
     );
 
     // Write to the window frame.
