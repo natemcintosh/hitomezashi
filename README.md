@@ -7,7 +7,7 @@ I created this repo to play around with creating different [Hitomezashi patterns
 Right now it can draw some simple patterns. To change the pattern, alter the slices of `bool`s in `view()` in `src/main.rs`.
 
 ## Future Goals
-- Allow user to input seed at runtime
+- ~~Allow user to input seed at runtime~~
 - Draw more than square grids
     - Triangular
     - Hexagonal
