@@ -17,7 +17,10 @@ struct Model {
 }
 
 fn main() {
-    nannou::app(model).loop_mode(LoopMode::Wait).update(update).run();
+    nannou::app(model)
+        .loop_mode(LoopMode::Wait)
+        .update(update)
+        .run();
 }
 
 fn model(app: &App) -> Model {
