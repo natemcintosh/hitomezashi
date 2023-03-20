@@ -3,6 +3,62 @@ use nannou_egui::{egui, Egui};
 use rand_pcg::Pcg64;
 use rand_seeder::Seeder;
 
+enum ShapeSettings {
+    Rectangle {
+        spacing: f32,
+        horz_selectors: Vec<bool>,
+        vert_selectors: Vec<bool>,
+        horz_seed: u8,
+        vert_seed: u8,
+    },
+    Triangle {
+        spacing: f32,
+        s1_selectors: Vec<bool>,
+        s2_selectors: Vec<bool>,
+        s3_selectors: Vec<bool>,
+        s1_seed: u8,
+        s2_seed: u8,
+        s3_seed: u8,
+    },
+}
+
+impl ShapeSettings {
+    fn new(spacing: f32) -> Self {
+        // By default, create a rectangle
+        ShapeSettings::Rectangle {
+            spacing,
+            horz_selectors: vec![false; 10],
+            vert_selectors: vec![false; 10],
+            horz_seed: 0,
+            vert_seed: 0,
+        }
+    }
+
+    fn display(&self, draw: &Draw, bounds: Rect) {
+        match self {
+            ShapeSettings::Rectangle {
+                spacing,
+                horz_selectors,
+                vert_selectors,
+                horz_seed,
+                vert_seed,
+            } => {
+                draw_hito_vertical(draw, bounds, *spacing, vert_selectors);
+                draw_hito_horizontal(draw, bounds, *spacing, horz_selectors);
+            }
+            ShapeSettings::Triangle {
+                spacing,
+                s1_selectors,
+                s2_selectors,
+                s3_selectors,
+                s1_seed,
+                s2_seed,
+                s3_seed,
+            } => todo!(),
+        }
+    }
+}
+
 struct RectSettings {
     spacing: f32,
     horz_selectors: Vec<bool>,
@@ -12,7 +68,7 @@ struct RectSettings {
 }
 
 struct Model {
-    settings: RectSettings,
+    settings: ShapeSettings,
     egui: Egui,
 }
 
@@ -35,13 +91,7 @@ fn model(app: &App) -> Model {
     let egui = Egui::from_window(&window);
     Model {
         egui,
-        settings: RectSettings {
-            spacing: 25.0,
-            horz_selectors: vec![false; 10],
-            vert_selectors: vec![false; 10],
-            horz_seed: 0,
-            vert_seed: 0,
-        },
+        settings: ShapeSettings::new(25.0),
     }
 }
 
@@ -87,7 +137,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     // Prepare to draw.
     let draw = app.draw();
 
-    // Clear the background to purple.
+    // Set the background color
     draw.background().color(WHITE);
 
     // Draw the pattern as specified by the model settings
@@ -230,4 +280,24 @@ fn draw_hito_vertical(draw: &Draw, bounds: Rect, dash_length: f32, on_off_select
         // Update x position
         current_x_pos += dash_length;
     }
+}
+
+/// Draw angled dashed lines with `dash_length` dashes and `dash_length` spacing between lines.
+/// The `on_off_selectors` pair up with each line. If true, then it starts with a dash,
+/// if false it starts with a space. If the bounds go farther than the `on_off_selectors`
+/// then `idx % on_off_selectors.len()` is used to continue selecting bools from it.
+/// `degs` is the number of degrees the lines should be angled: [0, 90] where 0 is horizontal
+/// and 90 is vertical.
+fn draw_hito_angled(
+    draw: &Draw,
+    bounds: Rect,
+    dash_length: f32,
+    on_off_selectors: &[bool],
+    degs: f32,
+) {
+    /*
+    I think that perhaps we could calculate the vertical spacing between lines, figure out
+    the equation of the line in the form `x + y + value = 0`, then use the `.x()` and
+    `.y()` methods to set the line.
+    */
 }
