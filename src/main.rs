@@ -25,12 +25,21 @@ enum ShapeSettings {
 impl ShapeSettings {
     fn new(spacing: f32) -> Self {
         // By default, create a rectangle
-        ShapeSettings::Rectangle {
+        // ShapeSettings::Rectangle {
+        //     spacing,
+        //     horz_selectors: vec![false; 10],
+        //     vert_selectors: vec![false; 10],
+        //     horz_seed: 0,
+        //     vert_seed: 0,
+        // }
+        ShapeSettings::Triangle {
             spacing,
-            horz_selectors: vec![false; 10],
-            vert_selectors: vec![false; 10],
-            horz_seed: 0,
-            vert_seed: 0,
+            s1_selectors: vec![false; 10],
+            s2_selectors: vec![false; 10],
+            s3_selectors: vec![false; 10],
+            s1_seed: 0,
+            s2_seed: 0,
+            s3_seed: 0,
         }
     }
 
@@ -46,6 +55,7 @@ impl ShapeSettings {
                 draw_hito_vertical(draw, bounds, *spacing, vert_selectors);
                 draw_hito_horizontal(draw, bounds, *spacing, horz_selectors);
             }
+
             ShapeSettings::Triangle {
                 spacing,
                 s1_selectors,
@@ -54,7 +64,11 @@ impl ShapeSettings {
                 s1_seed,
                 s2_seed,
                 s3_seed,
-            } => todo!(),
+            } => {
+                draw_hito_horizontal(draw, bounds, *spacing, s1_selectors);
+                draw_hito_angled(draw, bounds, *spacing, s2_selectors, 60.0);
+                draw_hito_angled(draw, bounds, *spacing, s3_selectors, 120.0);
+            }
         }
     }
 }
@@ -111,25 +125,25 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     let ctx = egui.begin_frame();
     egui::Window::new("Settings").show(&ctx, |ui| {
         let mut changed = false;
-        changed |= ui
-            .add(egui::Slider::new(&mut settings.spacing, 10.0..=100.0).text("Spacing"))
-            .changed();
+        // changed |= ui
+        //     .add(egui::Slider::new(&mut settings.spacing, 10.0..=100.0).text("Spacing"))
+        //     .changed();
 
-        changed |= ui
-            .add(egui::Slider::new(&mut settings.horz_seed, 0..=255).text("Horizontal Seed"))
-            .changed();
+        // changed |= ui
+        //     .add(egui::Slider::new(&mut settings.horz_seed, 0..=255).text("Horizontal Seed"))
+        //     .changed();
 
-        changed |= ui
-            .add(egui::Slider::new(&mut settings.vert_seed, 0..=255).text("Vertical Seed"))
-            .changed();
+        // changed |= ui
+        //     .add(egui::Slider::new(&mut settings.vert_seed, 0..=255).text("Vertical Seed"))
+        //     .changed();
 
-        if changed {
-            let mut rng: Pcg64 = Seeder::from(settings.horz_seed).make_rng();
-            rng.fill(&mut settings.horz_selectors[..]);
+        // if changed {
+        //     let mut rng: Pcg64 = Seeder::from(settings.horz_seed).make_rng();
+        //     rng.fill(&mut settings.horz_selectors[..]);
 
-            let mut rng: Pcg64 = Seeder::from(settings.vert_seed).make_rng();
-            rng.fill(&mut settings.vert_selectors[..]);
-        }
+        //     let mut rng: Pcg64 = Seeder::from(settings.vert_seed).make_rng();
+        //     rng.fill(&mut settings.vert_selectors[..]);
+        // }
     });
 }
 
@@ -141,19 +155,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     draw.background().color(WHITE);
 
     // Draw the pattern as specified by the model settings
-    draw_hito_horizontal(
-        &draw,
-        app.window_rect(),
-        model.settings.spacing,
-        &model.settings.horz_selectors,
-    );
-
-    draw_hito_vertical(
-        &draw,
-        app.window_rect(),
-        model.settings.spacing,
-        &model.settings.vert_selectors,
-    );
+    model.settings.display(&draw, app.window_rect());
 
     // Write to the window frame.
     draw.to_frame(app, &frame).unwrap();
@@ -282,12 +284,33 @@ fn draw_hito_vertical(draw: &Draw, bounds: Rect, dash_length: f32, on_off_select
     }
 }
 
+/*
+I think that perhaps we could calculate the vertical spacing between lines, figure out
+the equation of the line in the form `x + y + value = 0`, then use the `.x()` and
+`.y()` methods to set the line.
+An alternative option is to define a vector normal to the line, pointing in the "direction
+of movement" as we draw new lines. Then we just draw really long lines. This would be
+painfully in-elegant, but it would work for now. Would also want to check in on how drawing
+really big things can affect performance.
+This function also needs to make sure that the ends of each dash line up with the ends
+of dashes at different angles. I.e. All three sets of lines: horizontal, 60 deg, and 120
+deg need to meet at individual single points.
+Maybe could I draw a grid of points, then for each point, draw three lines, rotated 0, 60,
+and 120 degrees. (Need to figure out how far from point to edge of box). Start in top-left
+corner (that's an aribtrary choice), create a vector that goes down and right at 60deg.
+Every `dash_length`, draw a line that extends to the edges, one at 0, 60, and 120 deg.
+If this doesn't cover the whole window, maybe do this again, but from another corner?
+Problem with this is controlling when the dashes start. Perhaps could have vector from
+top left corner. Travel `dash_length` along that vector, then travel as far as necessary
+at 90 deg until an edge is hit. Then draw the dashed line.
+*/
+
 /// Draw angled dashed lines with `dash_length` dashes and `dash_length` spacing between lines.
 /// The `on_off_selectors` pair up with each line. If true, then it starts with a dash,
 /// if false it starts with a space. If the bounds go farther than the `on_off_selectors`
 /// then `idx % on_off_selectors.len()` is used to continue selecting bools from it.
-/// `degs` is the number of degrees the lines should be angled: [0, 90] where 0 is horizontal
-/// and 90 is vertical.
+/// `degs` is the number of degrees the lines should be angled: [0, 180] where 0 is horizontal,
+/// 90 is vertical, and 180 is once again horizontal.
 fn draw_hito_angled(
     draw: &Draw,
     bounds: Rect,
@@ -296,8 +319,70 @@ fn draw_hito_angled(
     degs: f32,
 ) {
     /*
-    I think that perhaps we could calculate the vertical spacing between lines, figure out
-    the equation of the line in the form `x + y + value = 0`, then use the `.x()` and
-    `.y()` methods to set the line.
+    Start at the top left corner. If we're at angle `degs`, then the
+    distance down the wall is `dash_length / cosd(degs)`. Go down the wall until the next
+    line would start below the bottom of the window. Calculate the ratio of how far
+    the next line would have start relative to the distance to the bottom of the window.
+    Take the remaining amount, and move the correct amount horizontally.
+    `dash_length / sind(degs)`
     */
+    let rads = degs.to_radians();
+    let max_line_length = bounds.bottom_left().distance(bounds.top_right());
+    let draw_direction_upwards = vec2(rads.cos(), rads.sin()).normalize() * max_line_length;
+
+    let vert_dist = vec2(0.0, (dash_length / rads.cos()).abs());
+    let horz_dist = vec2((dash_length / rads.sin()).abs(), 0.0);
+
+    // Go down the left side, drawing lines every `dash_length / cosd(degs)`, until we hit
+    // the bottom of the window
+    let mut spoint = bounds.top_left();
+    while spoint.y > bounds.bottom() {
+        // Create the ending points
+        let end_upwards = spoint + draw_direction_upwards;
+        let end_downwards = spoint - draw_direction_upwards;
+
+        // Draw the line in both directions
+        // Yes, this is doing extra work, but I'm feeling lazy and don't want to figure out
+        // how to do it properly
+        draw_dashed_line(draw, spoint, end_upwards, dash_length);
+        draw_dashed_line(draw, spoint, end_downwards, dash_length);
+
+        // Move down
+        spoint -= vert_dist;
+    }
+
+    // Find the new starting point along the bottom of the window
+    let ratio_downward = spoint.distance(bounds.bottom_left()) / vert_dist.length();
+    assert!(
+        ratio_downward < 1.0,
+        "The starting draw point is below the bottom left corner"
+    );
+    let ratio_right = 1.0 - ratio_downward;
+    spoint = bounds.bottom_right() + (horz_dist * ratio_right);
+
+    while spoint.x < bounds.right() {
+        // Create the ending points
+        let end_upwards = spoint + draw_direction_upwards;
+        let end_downwards = spoint - draw_direction_upwards;
+
+        // Draw the line in both directions
+        // Yes, this is doing extra work, but I'm feeling lazy and don't want to figure out
+        // how to do it properly
+        draw_dashed_line(draw, spoint, end_upwards, dash_length);
+        draw_dashed_line(draw, spoint, end_downwards, dash_length);
+
+        // Move right
+        spoint += horz_dist;
+    }
+}
+
+/// Starting at `point`, and moving in `direction`, within the given `bounds`, what is the
+/// point on the bounds that we hit? If the point is not in the bounds, `None` is returned
+fn calc_wall_intersection(point: Point2, direction: Vec2, bounds: &Rect) -> Option<Point2> {
+    // If not in the bounds, return None
+    if !bounds.contains(point) {
+        return None;
+    }
+
+    None
 }
