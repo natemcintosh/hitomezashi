@@ -1,7 +1,8 @@
-use nannou::{prelude::*, rand::Rng};
+use nannou::{
+    prelude::*,
+    rand::{Rng, SeedableRng},
+};
 use nannou_egui::{egui, Egui};
-use rand_pcg::Pcg64;
-use rand_seeder::Seeder;
 
 struct RectSettings {
     spacing: f32,
@@ -74,11 +75,15 @@ fn update(_app: &App, model: &mut Model, update: Update) {
             .changed();
 
         if changed {
-            let mut rng: Pcg64 = Seeder::from(settings.horz_seed).make_rng();
-            rng.fill(&mut settings.horz_selectors[..]);
+            let mut rng = nannou::rand::rngs::StdRng::seed_from_u64(settings.horz_seed as u64);
+            for selector in &mut settings.horz_selectors {
+                *selector = rng.gen_bool(0.5);
+            }
 
-            let mut rng: Pcg64 = Seeder::from(settings.vert_seed).make_rng();
-            rng.fill(&mut settings.vert_selectors[..]);
+            let mut rng = nannou::rand::rngs::StdRng::seed_from_u64(settings.vert_seed as u64);
+            for selector in &mut settings.vert_selectors {
+                *selector = rng.gen_bool(0.5);
+            }
         }
     });
 }
