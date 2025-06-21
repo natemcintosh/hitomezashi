@@ -3,7 +3,9 @@ use nannou::{
     rand::{Rng, SeedableRng},
 };
 use nannou_egui::{egui, Egui};
+#[cfg(test)]
 use std::fs::File;
+#[cfg(test)]
 use std::io::{BufReader, BufWriter};
 
 struct RectSettings {
@@ -19,6 +21,7 @@ struct Model {
     egui: Egui,
     save_requested: bool,
     hide_ui_for_save: bool,
+    save_path: Option<std::path::PathBuf>,
 }
 
 fn main() {
@@ -49,6 +52,7 @@ fn model(app: &App) -> Model {
         },
         save_requested: false,
         hide_ui_for_save: false,
+        save_path: None,
     }
 }
 
@@ -64,11 +68,14 @@ fn update(app: &App, model: &mut Model, update: Update) {
         ref mut egui,
         ref mut save_requested,
         ref mut hide_ui_for_save,
+        ref mut save_path,
     } = *model;
 
-    // Reset hide_ui_for_save flag after save is complete
-    if *hide_ui_for_save {
+    // Reset flags after save is complete
+    if *hide_ui_for_save && *save_requested {
         *hide_ui_for_save = false;
+        *save_requested = false;
+        *save_path = None;
         app.set_loop_mode(LoopMode::Wait);
         return; // Skip UI update this frame
     }
@@ -107,16 +114,23 @@ fn update(app: &App, model: &mut Model, update: Update) {
     // Save Image window
     egui::Window::new("Save Image").show(&ctx, |ui| {
         if ui.button("Save as PNG").clicked() {
-            *save_requested = true;
+            // Open file dialog immediately
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("PNG", &["png"])
+                .set_file_name("hitomezashi_pattern.png")
+                .save_file()
+            {
+                *save_path = Some(path);
+                *save_requested = true;
+                *hide_ui_for_save = true;
+                app.set_loop_mode(LoopMode::RefreshSync);
+            }
         }
     });
 
     // Handle save request
-    if *save_requested {
-        *save_requested = false;
-        *hide_ui_for_save = true;
-        // The save will happen in the next frame without UI
-        app.set_loop_mode(LoopMode::RefreshSync);
+    if *save_requested && *hide_ui_for_save {
+        // Save will happen in view function
     }
 }
 
@@ -131,10 +145,10 @@ fn view(app: &App, model: &Model, frame: Frame) {
     draw.to_frame(app, &frame).unwrap();
 
     // If we need to save without UI, do it now
-    if model.hide_ui_for_save {
-        save_image_now(app, &model.settings);
-        // Note: We can't modify model here since it's immutable
-        // The flag will be reset in the next update
+    if model.hide_ui_for_save && model.save_requested {
+        if let Some(ref path) = model.save_path {
+            save_frame_with_metadata(app, &frame, path, &model.settings);
+        }
     } else {
         model.egui.draw_to_frame(&frame).unwrap();
     }
@@ -273,45 +287,210 @@ fn draw_hito_vertical(draw: &Draw, bounds: Rect, dash_length: f32, on_off_select
     }
 }
 
-/// Save the current image to a file chosen by the user without UI elements
-fn save_image_now(app: &App, settings: &RectSettings) {
-    // Open file dialog to choose save location
-    if let Some(path) = rfd::FileDialog::new()
-        .add_filter("PNG", &["png"])
-        .set_file_name("hitomezashi_pattern.png")
-        .save_file()
-    {
-        // Capture the current frame (which now has no UI) and save it
-        app.main_window().capture_frame(&path);
+/// Save the current frame directly with metadata
+fn save_frame_with_metadata(
+    app: &App,
+    _frame: &Frame,
+    path: &std::path::Path,
+    settings: &RectSettings,
+) {
+    println!("Saving frame with metadata to: {}", path.display());
 
-        // Wait a moment for the file to be fully written
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Add metadata to the saved PNG
-        match add_metadata_to_png(&path, settings) {
-            Ok(_) => {
-                println!("Image saved to: {:?}", path);
-                // Verify the metadata was written correctly
-                if let Err(e) = read_png_metadata(&path) {
-                    eprintln!("Failed to verify metadata: {}", e);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to add metadata: {}", e);
-                println!("Image saved to: {:?} (without metadata)", path);
-            }
-        }
+    // Since capture_frame is unreliable, use manual PNG creation directly
+    match create_image_with_pattern(app, path, settings) {
+        Ok(()) => println!("Image saved with metadata to: {}", path.display()),
+        Err(e) => eprintln!("Failed to create image: {e}"),
     }
 }
 
-/// Add metadata containing RectSettings to the PNG file as text chunks
+/// Create PNG with actual hitomezashi pattern and metadata
+fn create_image_with_pattern(
+    app: &App,
+    path: &std::path::Path,
+    settings: &RectSettings,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use png::{BitDepth, ColorType, Encoder};
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    // Get window dimensions
+    let window_rect = app.window_rect();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let width = window_rect.w() as u32;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let height = window_rect.h() as u32;
+
+    // Create image data with white background
+    let mut image_data = Vec::with_capacity((width * height * 4) as usize);
+
+    // Initialize with white background
+    for _ in 0..(width * height) {
+        image_data.push(255); // R
+        image_data.push(255); // G
+        image_data.push(255); // B
+        image_data.push(255); // A
+    }
+
+    // Draw the hitomezashi pattern onto the image data
+    draw_pattern_to_image(&mut image_data, width, height, settings);
+
+    // Create PNG with metadata
+    let file = File::create(path)?;
+    let mut w = BufWriter::new(file);
+
+    let mut encoder = Encoder::new(&mut w, width, height);
+    encoder.set_color(ColorType::Rgba);
+    encoder.set_depth(BitDepth::Eight);
+
+    // Add metadata directly during creation
+    let settings_json = serde_json::json!({
+        "spacing": settings.spacing,
+        "horz_seed": settings.horz_seed,
+        "vert_seed": settings.vert_seed,
+        "horz_selectors": settings.horz_selectors,
+        "vert_selectors": settings.vert_selectors
+    });
+
+    encoder.add_text_chunk("Description".to_string(), "Hitomezashi Pattern".to_string())?;
+    encoder.add_text_chunk(
+        "Software".to_string(),
+        "Hitomezashi Pattern Generator".to_string(),
+    )?;
+    encoder.add_text_chunk("Settings".to_string(), settings_json.to_string())?;
+
+    let mut writer = encoder.write_header()?;
+    writer.write_image_data(&image_data)?;
+    writer.finish()?;
+
+    Ok(())
+}
+
+/// Draw the hitomezashi pattern directly onto image data
+fn draw_pattern_to_image(image_data: &mut [u8], width: u32, height: u32, settings: &RectSettings) {
+    let spacing = settings.spacing;
+
+    // Draw horizontal lines
+    let mut current_y = 0.0;
+    let mut selector_idx = 0;
+
+    while current_y < height as f32 {
+        let y = current_y as u32;
+        if y >= height {
+            break;
+        }
+
+        let start_with_dash = settings.horz_selectors[selector_idx % settings.horz_selectors.len()];
+        selector_idx += 1;
+
+        draw_horizontal_dashed_line(image_data, width, height, y, spacing, start_with_dash);
+        current_y += spacing;
+    }
+
+    // Draw vertical lines
+    let mut current_x = 0.0;
+    selector_idx = 0;
+
+    while current_x < width as f32 {
+        let x = current_x as u32;
+        if x >= width {
+            break;
+        }
+
+        let start_with_dash = settings.vert_selectors[selector_idx % settings.vert_selectors.len()];
+        selector_idx += 1;
+
+        draw_vertical_dashed_line(image_data, width, height, x, spacing, start_with_dash);
+        current_x += spacing;
+    }
+}
+
+fn draw_horizontal_dashed_line(
+    image_data: &mut [u8],
+    width: u32,
+    height: u32,
+    y: u32,
+    dash_length: f32,
+    start_with_dash: bool,
+) {
+    if y >= height {
+        return;
+    }
+
+    let mut x = 0.0;
+    let mut drawing = start_with_dash;
+
+    while x < width as f32 {
+        let end_x = (x + dash_length).min(width as f32);
+
+        if drawing {
+            for pixel_x in (x as u32)..(end_x as u32) {
+                if pixel_x < width {
+                    set_pixel_black(image_data, width, pixel_x, y);
+                }
+            }
+        }
+
+        x = end_x;
+        drawing = !drawing;
+    }
+}
+
+fn draw_vertical_dashed_line(
+    image_data: &mut [u8],
+    width: u32,
+    height: u32,
+    x: u32,
+    dash_length: f32,
+    start_with_dash: bool,
+) {
+    if x >= width {
+        return;
+    }
+
+    let mut y = 0.0;
+    let mut drawing = start_with_dash;
+
+    while y < height as f32 {
+        let end_y = (y + dash_length).min(height as f32);
+
+        if drawing {
+            for pixel_y in (y as u32)..(end_y as u32) {
+                if pixel_y < height {
+                    set_pixel_black(image_data, width, x, pixel_y);
+                }
+            }
+        }
+
+        y = end_y;
+        drawing = !drawing;
+    }
+}
+
+fn set_pixel_black(image_data: &mut [u8], width: u32, x: u32, y: u32) {
+    let index = ((y * width + x) * 4) as usize;
+    if index + 3 < image_data.len() {
+        image_data[index] = 0; // R
+        image_data[index + 1] = 0; // G
+        image_data[index + 2] = 0; // B
+                                   // Keep alpha at 255
+    }
+}
+
+/// Add metadata containing `RectSettings` to the PNG file as text chunks
+#[cfg(test)]
 fn add_metadata_to_png(
     path: &std::path::Path,
     settings: &RectSettings,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Check if file exists and is readable
     if !path.exists() {
-        return Err(format!("PNG file does not exist: {:?}", path).into());
+        return Err(format!("PNG file does not exist: {}", path.display()).into());
+    }
+
+    // Additional check for file size to ensure it's fully written
+    let file_size = std::fs::metadata(path)?.len();
+    if file_size == 0 {
+        return Err(format!("PNG file is empty: {}", path.display()).into());
     }
 
     // Read the original PNG file
@@ -340,9 +519,9 @@ fn add_metadata_to_png(
 
     {
         let file = File::create(&temp_path)?;
-        let ref mut w = BufWriter::new(file);
+        let mut w = BufWriter::new(file);
 
-        let mut encoder = png::Encoder::new(w, info.width, info.height);
+        let mut encoder = png::Encoder::new(&mut w, info.width, info.height);
         encoder.set_color(info.color_type);
         encoder.set_depth(info.bit_depth);
 
@@ -360,26 +539,11 @@ fn add_metadata_to_png(
 
     // Replace original file with the new one
     std::fs::rename(&temp_path, path)?;
-    println!("Added metadata successfully: {}", settings_json);
+    println!("Added metadata successfully: {settings_json}");
     Ok(())
 }
 
 /// Read and display metadata from a PNG file for verification
-fn read_png_metadata(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut decoder = png::Decoder::new(reader);
-
-    decoder.set_transformations(png::Transformations::IDENTITY);
-
-    // We need to read the PNG manually to access text chunks
-    let _reader = decoder.read_info()?;
-
-    // Try to read text chunks from the info
-    // Metadata verification completed successfully
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
